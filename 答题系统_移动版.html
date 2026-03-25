@@ -79,12 +79,15 @@
         .upload-icon { font-size: 60px; margin-bottom: 20px; }
         .upload-desc { color: #666; font-size: 14px; margin-bottom: 30px; line-height: 1.6; }
         .upload-status { margin-top: 14px; font-size: 13px; color: #667085; line-height: 1.6; text-align: center; }
+        .user-meta { margin-top: 12px; font-size: 12px; color: #98a2b3; }
 
         /* 按钮样式 */
         .btn { width: 100%; padding: 14px; border: none; border-radius: 25px; font-size: 16px; font-weight: bold; text-align: center; cursor: pointer; transition: 0.2s; }
         .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 15px rgba(102,126,234,0.3); }
         .btn-primary:active { transform: scale(0.98); }
         .btn-secondary { background: #e0e0e0; color: #333; margin-top: 15px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+        .btn-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 20px; }
 
         /* 首页统计 & 列表 */
         .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
@@ -151,6 +154,7 @@
                 <input type="file" id="json-upload" accept=".json" style="display:none;">
                 <button class="btn btn-primary" style="width: 80%;" id="uploadBtn">选择本地题库</button>
                 <div class="upload-status" id="upload-status">正在准备题库...</div>
+                <div class="user-meta" id="user-meta"></div>
             </div>
         </div>
 
@@ -186,9 +190,10 @@
                     <div id="explanation-text"></div>
                 </div>
 
-                <div style="margin-top: 20px;">
+                <div class="btn-row">
+                    <button class="btn btn-secondary" id="prev-btn">上一题</button>
                     <button class="btn btn-primary" id="submit-btn">确定提交</button>
-                    <button class="btn btn-primary" id="next-btn" style="display: none;">下一题</button>
+                    <button class="btn btn-secondary" id="next-btn">下一题</button>
                 </div>
             </div>
         </div>
@@ -236,13 +241,136 @@
         let windowChapterQuestions = []; // 当前练习的题目全局索引数组
         let currentIndex = 0;            // 当前题目下标
         let currentSelections = [];       // 当前题目的用户选择（字母数组）
+        let currentMode = 'home';
+        let currentModeLabel = '';
+        let sessionRestored = false;
         
         // 错题本: 存储全局索引
         let wrongAnswers = [];
+        let userId = '';
+        let progressState = {
+            mode: 'home',
+            modeLabel: '',
+            questionIds: [],
+            currentIndex: 0,
+            answers: {}
+        };
+        const STORAGE_KEYS = {
+            userId: 'h5_local_user_id_v1',
+            wrongBook: 'h5_wrongAnswers_v2',
+            progress: 'h5_progress_state_v1'
+        };
+
+        function generateUserId() {
+            return 'u_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        }
+
+        function ensureUserId() {
+            const stored = localStorage.getItem(STORAGE_KEYS.userId);
+            userId = stored || generateUserId();
+            if (!stored) localStorage.setItem(STORAGE_KEYS.userId, userId);
+            const metaEl = document.getElementById('user-meta');
+            if (metaEl) metaEl.textContent = `本机用户 ID：${userId}`;
+        }
+
+        function loadProgressState() {
+            const stored = localStorage.getItem(STORAGE_KEYS.progress);
+            if (!stored) return;
+            try {
+                const parsed = JSON.parse(stored);
+                if (!parsed || typeof parsed !== 'object') return;
+                progressState = {
+                    mode: parsed.mode || 'home',
+                    modeLabel: parsed.modeLabel || '',
+                    questionIds: Array.isArray(parsed.questionIds) ? parsed.questionIds : [],
+                    currentIndex: typeof parsed.currentIndex === 'number' ? parsed.currentIndex : 0,
+                    answers: parsed.answers && typeof parsed.answers === 'object' ? parsed.answers : {}
+                };
+            } catch (e) {
+                progressState = { mode: 'home', modeLabel: '', questionIds: [], currentIndex: 0, answers: {} };
+            }
+        }
+
+        function saveProgressState() {
+            localStorage.setItem(STORAGE_KEYS.progress, JSON.stringify(progressState));
+        }
+
+        function clearProgressState() {
+            progressState = { mode: 'home', modeLabel: '', questionIds: [], currentIndex: 0, answers: {} };
+            saveProgressState();
+        }
+
+        function getQuestionState(globalIndex) {
+            return progressState.answers[String(globalIndex)] || null;
+        }
+
+        function setQuestionState(globalIndex, patch) {
+            const key = String(globalIndex);
+            const prev = progressState.answers[key] || {};
+            progressState.answers[key] = {
+                ...prev,
+                ...patch,
+                updatedAt: Date.now()
+            };
+            saveProgressState();
+        }
+
+        function syncProgressFromView() {
+            progressState.mode = currentMode;
+            progressState.modeLabel = currentModeLabel;
+            progressState.questionIds = [...windowChapterQuestions];
+            progressState.currentIndex = currentIndex;
+            saveProgressState();
+        }
+
+        function applyStoredQuestionState(q) {
+            const saved = getQuestionState(q._globalIndex);
+            if (!saved) return;
+            currentSelections = Array.isArray(saved.selections) ? [...saved.selections] : [];
+            currentSelections.forEach(key => {
+                document.querySelector(`.option-item[data-key="${key}"]`)?.classList.add('selected');
+            });
+            if (saved.submitted) {
+                paintSubmittedState(q, saved);
+            }
+        }
+
+        function paintSubmittedState(q, savedState) {
+            const correctAnswerLetters = ((q.answer || '').match(/[A-Z]/g) || []);
+            document.querySelectorAll('.option-item').forEach(el => {
+                const k = el.getAttribute('data-key');
+                el.classList.remove('selected');
+                if (correctAnswerLetters.includes(k)) el.classList.add('correct');
+                else if ((savedState.selections || []).includes(k) && !correctAnswerLetters.includes(k)) el.classList.add('wrong');
+                el.style.pointerEvents = 'none';
+            });
+
+            const resBox = document.getElementById('result-box');
+            if (savedState.isCorrect) {
+                resBox.className = 'result-box correct';
+                resBox.innerHTML = '✅ 回答正确';
+            } else {
+                resBox.className = 'result-box wrong';
+                resBox.innerHTML = `❌ 回答错误，正确答案是：<b>${escapeHtml(q.answer || '无')}</b>`;
+            }
+            document.getElementById('explanation').classList.add('show');
+            document.getElementById('explanation-text').innerHTML = escapeHtml(q.explanation || '暂无详细解析，请对照答案理解。').replace(/\n/g, '<br>');
+            document.getElementById('submit-btn').style.display = 'none';
+        }
+
+        function updateNavButtons() {
+            const prevBtn = document.getElementById('prev-btn');
+            const nextBtn = document.getElementById('next-btn');
+            if (prevBtn) prevBtn.disabled = currentIndex <= 0;
+            if (nextBtn) {
+                nextBtn.disabled = !windowChapterQuestions.length;
+                nextBtn.textContent = currentIndex >= windowChapterQuestions.length - 1 ? '完成' : '下一题';
+            }
+        }
 
         // 辅助函数：加载错题本
         function loadWrongBook() {
-            const stored = localStorage.getItem('h5_wrongAnswers_v2');
+            const stored = localStorage.getItem(STORAGE_KEYS.wrongBook);
             if (stored) {
                 try {
                     wrongAnswers = JSON.parse(stored);
@@ -253,7 +381,7 @@
             }
         }
         function saveWrongBook() {
-            localStorage.setItem('h5_wrongAnswers_v2', JSON.stringify(wrongAnswers));
+            localStorage.setItem(STORAGE_KEYS.wrongBook, JSON.stringify(wrongAnswers));
         }
 
         // 智能答案对比 (处理多选字母乱序、逗号分隔、判断题)
@@ -290,6 +418,7 @@
                     saveWrongBook();
                     processData();
                     initHome();
+                    clearProgressState();
                     alert(`✅ 导入成功！共 ${questions.length} 道题目。错题本已重置。`);
                 } catch (err) {
                     alert("解析失败，请确保选择了正确的题库JSON文件！\n" + err.message);
@@ -317,6 +446,7 @@
                 saveWrongBook();
                 processData();
                 initHome();
+                restoreSavedSession();
                 updateUploadStatus(`已自动加载 ${questions.length} 道题目`);
             } catch (err) {
                 updateUploadStatus('自动加载失败，请点击按钮手动选择 JSON 文件', true);
@@ -381,6 +511,29 @@
             switchTab('home');
         }
 
+        function restoreSavedSession() {
+            if (sessionRestored || !progressState.questionIds.length || !questions.length) return;
+            const validIds = progressState.questionIds.filter(idx => typeof idx === 'number' && questions[idx]);
+            if (!validIds.length) return;
+            windowChapterQuestions = validIds;
+            currentIndex = Math.min(progressState.currentIndex || 0, validIds.length - 1);
+            currentMode = progressState.mode || 'practice';
+            currentModeLabel = progressState.modeLabel || '';
+            sessionRestored = true;
+            if (currentMode === 'exam') {
+                document.getElementById('app-title').textContent = currentModeLabel || '📝 模拟考试 (继续作答)';
+                document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+                document.querySelector('.tab-item[data-tab="exam"]')?.classList.add('active');
+            } else {
+                document.getElementById('app-title').textContent = currentModeLabel || '📖 继续练习';
+                document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+                document.querySelector('.tab-item[data-tab="home"]')?.classList.add('active');
+            }
+            document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-practice').classList.add('active');
+            renderQuestion();
+        }
+
         // 简单防XSS
         function escapeHtml(str) {
             if (!str) return '';
@@ -412,7 +565,7 @@
             }
             
             // 标题设置
-            const titles = { 'home': '资金业务认证练习', 'wrong': '我的错题本', 'knowledge': '学习地图', 'practice': '答题练习' };
+            const titles = { 'home': '资金业务认证练习', 'wrong': '我的错题本', 'knowledge': '学习地图', 'practice': currentModeLabel || '答题练习' };
             document.getElementById('app-title').textContent = titles[pageId] || '答题系统';
             
             // 页面专属渲染
@@ -431,6 +584,8 @@
             windowChapterQuestions = questions.map(q => q._globalIndex).sort(() => Math.random() - 0.5);
             currentIndex = 0;
             currentSelections = [];
+            currentMode = 'exam';
+            currentModeLabel = '📝 模拟考试 (全库乱序)';
             document.getElementById('app-title').textContent = '📝 模拟考试 (全库乱序)';
             // 底部高亮模考项
             document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
@@ -439,6 +594,7 @@
             // 显示练习页面
             document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
             document.getElementById('page-practice').classList.add('active');
+            syncProgressFromView();
             renderQuestion();
         }
 
@@ -449,10 +605,13 @@
             if (windowChapterQuestions.length === 0) return alert('本章节无题目');
             currentIndex = 0;
             currentSelections = [];
-            document.getElementById('app-title').textContent = `📖 章节练习 · ${chapter}`;
+            currentMode = 'chapter';
+            currentModeLabel = `📖 章节练习 · ${chapter}`;
+            document.getElementById('app-title').textContent = currentModeLabel;
             // 高亮首页tab（因为从首页发起）
             document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
             document.querySelector('.tab-item[data-tab="home"]')?.classList.add('active');
+            syncProgressFromView();
             switchTab('practice');
         }
 
@@ -466,6 +625,7 @@
             }
             const q = questions[windowChapterQuestions[currentIndex]];
             if (!q) return;
+            syncProgressFromView();
 
             // 进度和Header
             document.getElementById('current-num').textContent = currentIndex + 1;
@@ -516,11 +676,16 @@
 
             // 重置UI状态
             currentSelections = [];
+            document.querySelectorAll('.option-item').forEach(el => {
+                el.classList.remove('selected', 'correct', 'wrong');
+                el.style.pointerEvents = '';
+            });
             document.getElementById('result-box').className = 'result-box';
             document.getElementById('result-box').innerHTML = '';
             document.getElementById('explanation').classList.remove('show');
             document.getElementById('submit-btn').style.display = 'block';
-            document.getElementById('next-btn').style.display = 'none';
+            applyStoredQuestionState(q);
+            updateNavButtons();
             
             // 滚动到顶部
             document.querySelector('.app-body').scrollTop = 0;
@@ -549,6 +714,7 @@
                     targetEl.classList.add('selected');
                 }
             }
+            setQuestionState(q._globalIndex, { selections: [...currentSelections], submitted: false });
         }
 
         // 8. 提交答案 + 错题管理 + 动态移除错题
@@ -559,18 +725,15 @@
             const isCorrect = isAnswerCorrect(currentSelections, q.answer, q.type);
             
             // 高亮所有选项的正确/错误样式
-            const correctAnswerLetters = (q.answer.match(/[A-Z]/g) || []);
-            document.querySelectorAll('.option-item').forEach(el => {
-                const k = el.getAttribute('data-key');
-                if (correctAnswerLetters.includes(k)) el.classList.add('correct');
-                else if (currentSelections.includes(k) && !correctAnswerLetters.includes(k)) el.classList.add('wrong');
-                el.style.pointerEvents = 'none';
-            });
+            const savedState = {
+                selections: [...currentSelections],
+                submitted: true,
+                isCorrect
+            };
+            setQuestionState(q._globalIndex, savedState);
+            paintSubmittedState(q, savedState);
             
-            const resBox = document.getElementById('result-box');
             if (isCorrect) {
-                resBox.className = 'result-box correct';
-                resBox.innerHTML = '✅ 回答正确';
                 // 如果此题在错题本中，移除
                 const idxInWrong = wrongAnswers.indexOf(q._globalIndex);
                 if (idxInWrong !== -1) {
@@ -580,9 +743,6 @@
                     if (document.getElementById('page-wrong').classList.contains('active')) renderWrongBook();
                 }
             } else {
-                resBox.className = 'result-box wrong';
-                const answerDisplay = q.answer || '无';
-                resBox.innerHTML = `❌ 回答错误，正确答案是：<b>${escapeHtml(answerDisplay)}</b>`;
                 // 加入错题本 (避免重复)
                 if (!wrongAnswers.includes(q._globalIndex)) {
                     wrongAnswers.push(q._globalIndex);
@@ -595,20 +755,25 @@
             document.getElementById('explanation').classList.add('show');
             const explanationText = q.explanation || '暂无详细解析，请对照答案理解。';
             document.getElementById('explanation-text').innerHTML = escapeHtml(explanationText).replace(/\n/g, '<br>');
-            
-            // 切换按钮
-            document.getElementById('submit-btn').style.display = 'none';
-            document.getElementById('next-btn').style.display = 'block';
         }
 
         // 9. 下一题
         function nextQuestion() {
             if (currentIndex < windowChapterQuestions.length - 1) {
                 currentIndex++;
+                syncProgressFromView();
                 renderQuestion();
             } else {
                 alert('🎉 恭喜！本部分题目已完成！');
                 switchTab('home');
+            }
+        }
+
+        function prevQuestion() {
+            if (currentIndex > 0) {
+                currentIndex--;
+                syncProgressFromView();
+                renderQuestion();
             }
         }
 
@@ -642,10 +807,13 @@
             windowChapterQuestions = [absoluteIndex];
             currentIndex = 0;
             currentSelections = [];
+            currentMode = 'wrong';
+            currentModeLabel = '🔁 错题回顾';
             document.getElementById('app-title').textContent = '🔁 错题回顾';
             // 保持底部tab高亮不变但切换到练习页
             document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
             document.getElementById('page-practice').classList.add('active');
+            syncProgressFromView();
             renderQuestion();
         }
         
@@ -674,9 +842,12 @@
             windowChapterQuestions = indices;
             currentIndex = 0;
             currentSelections = [];
-            document.getElementById('app-title').textContent = `📌 专项练习 · ${kw}`;
+            currentMode = 'keyword';
+            currentModeLabel = `📌 专项练习 · ${kw}`;
+            document.getElementById('app-title').textContent = currentModeLabel;
             document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
             document.getElementById('page-practice').classList.add('active');
+            syncProgressFromView();
             renderQuestion();
         }
         
@@ -689,6 +860,7 @@
                 if (e.target.files.length) loadJSON(e.target.files[0]);
                 e.target.value = '';
             });
+            document.getElementById('prev-btn').addEventListener('click', prevQuestion);
             document.getElementById('submit-btn').addEventListener('click', submitAnswer);
             document.getElementById('next-btn').addEventListener('click', nextQuestion);
             // 底部导航统一
@@ -704,7 +876,9 @@
         }
         
         // 初始化加载错题本
+        ensureUserId();
         loadWrongBook();
+        loadProgressState();
         bindEvents();
         autoLoadBundledJSON();
     </script>
