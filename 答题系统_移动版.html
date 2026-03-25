@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>资金业务认证考试</title>
+    <style>
+        /* CSS Reset & 基础设置 */
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", STHeiti, "Microsoft Yahei", Tahoma, Simsun, sans-serif; 
+            background-color: #f4f6f9; 
+            color: #333; 
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 顶部标题栏 */
+        .app-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: calc(env(safe-area-inset-top) + 15px) 20px 15px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 10;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        /* 主体内容区域 */
+        .app-body {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 15px;
+            padding-bottom: calc(env(safe-area-inset-bottom) + 80px);
+        }
+
+        /* 底部导航栏 */
+        .app-tabbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            display: flex;
+            justify-content: space-around;
+            padding-bottom: env(safe-area-inset-bottom);
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+            z-index: 20;
+            display: none;
+        }
+        .tab-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px 0;
+            color: #888;
+            font-size: 12px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .tab-item.active { color: #667eea; font-weight: bold; }
+        .tab-icon { font-size: 20px; margin-bottom: 4px; }
+
+        /* 卡片样式 */
+        .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+        .page-view { display: none; animation: fadeIn 0.3s ease; }
+        .page-view.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* 上传区 */
+        .upload-area { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh; text-align: center; }
+        .upload-icon { font-size: 60px; margin-bottom: 20px; }
+        .upload-desc { color: #666; font-size: 14px; margin-bottom: 30px; line-height: 1.6; }
+        .upload-status { margin-top: 14px; font-size: 13px; color: #667085; line-height: 1.6; text-align: center; }
+
+        /* 按钮样式 */
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 25px; font-size: 16px; font-weight: bold; text-align: center; cursor: pointer; transition: 0.2s; }
+        .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 15px rgba(102,126,234,0.3); }
+        .btn-primary:active { transform: scale(0.98); }
+        .btn-secondary { background: #e0e0e0; color: #333; margin-top: 15px; }
+
+        /* 首页统计 & 列表 */
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+        .stat-card { background: #f8f9fa; padding: 15px 5px; border-radius: 10px; text-align: center; }
+        .stat-num { font-size: 24px; font-weight: bold; color: #667eea; margin-bottom: 5px; }
+        .stat-title { font-size: 12px; color: #666; }
+        
+        .list-group { display: flex; flex-direction: column; gap: 10px; }
+        .list-item { background: #f8f9fa; padding: 16px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 15px; cursor: pointer; transition: 0.2s; }
+        .list-item:active { background: #eef2ff; }
+        .badge { background: #e7f3ff; color: #667eea; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+
+        /* 答题区 */
+        .progress-bar { height: 4px; background: #eee; border-radius: 2px; margin-bottom: 15px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #667eea; width: 0%; transition: 0.3s; }
+        .q-header { display: flex; justify-content: space-between; font-size: 13px; color: #888; margin-bottom: 10px; }
+        .q-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px; }
+        .tag { padding: 3px 8px; border-radius: 4px; font-size: 11px; }
+        .tag-easy { background: #d4edda; color: #155724; }
+        .tag-medium { background: #fff3cd; color: #856404; }
+        .tag-hard { background: #f8d7da; color: #721c24; }
+        .tag-high { background: #ffeeba; color: #d39e00; font-weight: bold; }
+        .q-title { font-size: 18px; font-weight: bold; line-height: 1.5; margin-bottom: 20px; color: #222; }
+        
+        /* 选项 */
+        .options-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
+        .option-item { border: 1.5px solid #e0e0e0; border-radius: 10px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; transition: 0.2s; background: white; cursor: pointer; }
+        .option-item.selected { border-color: #667eea; background: #f4f6ff; }
+        .option-item.correct { border-color: #28a745; background: #f0fdf4; }
+        .option-item.wrong { border-color: #dc3545; background: #fdf2f2; }
+        .opt-letter { width: 28px; height: 28px; border-radius: 50%; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; flex-shrink: 0; color: #555; }
+        .option-item.selected .opt-letter { background: #667eea; color: white; }
+        .option-item.correct .opt-letter { background: #28a745; color: white; }
+        .option-item.wrong .opt-letter { background: #dc3545; color: white; }
+        .opt-text { font-size: 15px; line-height: 1.4; }
+
+        /* 解析区 */
+        .result-box { padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 16px; display: none; }
+        .result-box.correct { background: #d4edda; color: #155724; display: block; }
+        .result-box.wrong { background: #f8d7da; color: #721c24; display: block; }
+        .explanation { background: #f8f9fa; padding: 15px; border-radius: 10px; font-size: 14px; line-height: 1.6; color: #444; display: none; margin-bottom: 20px;}
+        .explanation.show { display: block; }
+        .explanation-title { color: #667eea; font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
+
+        /* 标签云/错题本 */
+        .keyword-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+        .keyword-chip { background: white; border: 1px solid #ddd; padding: 6px 12px; border-radius: 20px; font-size: 13px; color: #555; cursor: pointer; transition: 0.2s; }
+        .keyword-chip:active { background: #f0f0f0; }
+        .keyword-chip.hot { border-color: #ffc107; color: #d39e00; background: #fff8e1; }
+        .wrong-q-item { border-left: 4px solid #dc3545; padding-left: 12px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="app-header" id="app-title">资金业务认证练习</div>
+
+    <div class="app-body">
+        
+        <div id="page-upload" class="page-view active">
+            <div class="upload-area">
+                <div class="upload-icon">📁</div>
+                <h2 style="margin-bottom: 10px;">导入题库</h2>
+                <p class="upload-desc">系统会优先自动加载同目录的 <b>merged_questions.json</b><br>如自动加载失败，也可手动选择本地 JSON 文件</p>
+                <input type="file" id="json-upload" accept=".json" style="display:none;">
+                <button class="btn btn-primary" style="width: 80%;" id="uploadBtn">选择本地题库</button>
+                <div class="upload-status" id="upload-status">正在准备题库...</div>
+            </div>
+        </div>
+
+        <div id="page-home" class="page-view">
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-title">总题数</div></div>
+                <div class="stat-card"><div class="stat-num" id="stat-high">0</div><div class="stat-title">高频题</div></div>
+                <div class="stat-card"><div class="stat-num" id="stat-know">0</div><div class="stat-title">知识点</div></div>
+            </div>
+            
+            <h3 style="margin: 20px 0 10px; font-size: 16px;">📖 章节练习</h3>
+            <div class="list-group" id="chapter-list"></div>
+        </div>
+
+        <div id="page-practice" class="page-view">
+            <div class="card" style="min-height: 70vh;">
+                <div class="q-header">
+                    <span id="current-chapter">章节名称</span>
+                    <span><b id="current-num" style="color:#667eea;font-size:16px;">1</b> / <span id="total-num">10</span></span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+                
+                <div class="q-tags" id="question-tags"></div>
+                
+                <div class="q-title" id="question-text">题目加载中...</div>
+                
+                <div class="options-list" id="options-container"></div>
+                
+                <div class="result-box" id="result-box"></div>
+                
+                <div class="explanation" id="explanation">
+                    <div class="explanation-title"><span>💡</span> 答案解析</div>
+                    <div id="explanation-text"></div>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-primary" id="submit-btn">确定提交</button>
+                    <button class="btn btn-primary" id="next-btn" style="display: none;">下一题</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-wrong" class="page-view">
+            <div class="card">
+                <h3 style="margin-bottom: 15px; font-size: 16px;">📚 我的错题 (<span id="wrong-count">0</span>)</h3>
+                <div class="list-group" id="wrong-list"></div>
+            </div>
+        </div>
+
+        <div id="page-knowledge" class="page-view">
+            <div class="card">
+                <h3 style="margin-bottom: 15px; font-size: 16px;">🔥 高频考点</h3>
+                <div class="keyword-cloud" id="hot-knowledge-list"></div>
+                
+                <h3 style="margin: 25px 0 15px; font-size: 16px;">🗺️ 全部知识点</h3>
+                <div class="keyword-cloud" id="knowledge-list"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="app-tabbar" id="main-nav">
+        <div class="tab-item" data-tab="home">
+            <div class="tab-icon">🏠</div><div>首页</div>
+        </div>
+        <div class="tab-item" data-tab="exam">
+            <div class="tab-icon">📋</div><div>模考</div>
+        </div>
+        <div class="tab-item" data-tab="wrong">
+            <div class="tab-icon">📚</div><div>错题</div>
+        </div>
+        <div class="tab-item" data-tab="knowledge">
+            <div class="tab-icon">🗺️</div><div>地图</div>
+        </div>
+    </div>
+
+    <script>
+        // 全局状态管理
+        let questions = [];
+        let chapters = {};
+        let knowledge = { keywords: [], high_frequency_keywords: [] };
+        
+        let windowChapterQuestions = []; // 当前练习的题目全局索引数组
+        let currentIndex = 0;            // 当前题目下标
+        let currentSelections = [];       // 当前题目的用户选择（字母数组）
+        
+        // 错题本: 存储全局索引
+        let wrongAnswers = [];
+
+        // 辅助函数：加载错题本
+        function loadWrongBook() {
+            const stored = localStorage.getItem('h5_wrongAnswers_v2');
+            if (stored) {
+                try {
+                    wrongAnswers = JSON.parse(stored);
+                    if (!Array.isArray(wrongAnswers)) wrongAnswers = [];
+                } catch(e) { wrongAnswers = []; }
+            } else {
+                wrongAnswers = [];
+            }
+        }
+        function saveWrongBook() {
+            localStorage.setItem('h5_wrongAnswers_v2', JSON.stringify(wrongAnswers));
+        }
+
+        // 智能答案对比 (处理多选字母乱序、逗号分隔、判断题)
+        function isAnswerCorrect(userSelections, correctAnswerRaw, questionType) {
+            if (!userSelections || userSelections.length === 0) return false;
+            // 判断题类型处理
+            if (questionType === '判断题') {
+                const userStr = userSelections[0];
+                return userStr === correctAnswerRaw;
+            }
+            // 提取正确答案中的所有大写字母 (A-Z)
+            const letterPattern = /[A-Z]/g;
+            const correctLetters = (correctAnswerRaw.match(letterPattern) || []);
+            if (correctLetters.length === 0) {
+                // 如果没有字母，直接字符串比较（兼容意外情况）
+                return userSelections.sort().join('') === correctAnswerRaw.split('').sort().join('');
+            }
+            const userLetters = [...userSelections].sort();
+            const stdCorrect = [...correctLetters].sort();
+            if (userLetters.length !== stdCorrect.length) return false;
+            return userLetters.every((l, idx) => l === stdCorrect[idx]);
+        }
+
+        // 1. 读取 JSON 数据
+        function loadJSON(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const rawData = JSON.parse(e.target.result);
+                    if (!Array.isArray(rawData)) throw new Error("题库格式需为数组");
+                    questions = rawData;
+                    // 导入新题库后，清空错题本（避免索引错乱）
+                    wrongAnswers = [];
+                    saveWrongBook();
+                    processData();
+                    initHome();
+                    alert(`✅ 导入成功！共 ${questions.length} 道题目。错题本已重置。`);
+                } catch (err) {
+                    alert("解析失败，请确保选择了正确的题库JSON文件！\n" + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function updateUploadStatus(message, isError) {
+            const statusEl = document.getElementById('upload-status');
+            if (!statusEl) return;
+            statusEl.textContent = message;
+            statusEl.style.color = isError ? '#dc3545' : '#667085';
+        }
+
+        async function autoLoadBundledJSON() {
+            updateUploadStatus('正在自动加载在线题库...');
+            try {
+                const response = await fetch('./merged_questions.json', { cache: 'no-store' });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const rawData = await response.json();
+                if (!Array.isArray(rawData)) throw new Error('题库格式需为数组');
+                questions = rawData;
+                wrongAnswers = [];
+                saveWrongBook();
+                processData();
+                initHome();
+                updateUploadStatus(`已自动加载 ${questions.length} 道题目`);
+            } catch (err) {
+                updateUploadStatus('自动加载失败，请点击按钮手动选择 JSON 文件', true);
+                console.error('Auto load JSON failed:', err);
+            }
+        }
+
+        // 2. 数据分类与统计
+        function processData() {
+            chapters = {};
+            let keywordCounts = {};
+            let hotKeywordSet = new Set();
+            let highFreqCount = 0;
+
+            questions.forEach((q, i) => {
+                // 确保绝对索引
+                q._globalIndex = i;
+                // 标准化字段
+                if (!q.chapter) q.chapter = '综合测试';
+                if (!q.keywords) q.keywords = [];
+                if (!q.type) q.type = q.answer && (q.answer.length > 1 && !['对','错'].includes(q.answer)) ? '多选题' : '单选题';
+                
+                // 章节归类
+                const ch = q.chapter;
+                if (!chapters[ch]) chapters[ch] = [];
+                chapters[ch].push(i);
+                
+                if (q.high_frequency) highFreqCount++;
+                
+                // 关键词归类
+                if (Array.isArray(q.keywords)) {
+                    q.keywords.forEach(kw => {
+                        if (kw && kw !== '待补充' && kw.trim() !== '') {
+                            keywordCounts[kw] = (keywordCounts[kw] || 0) + 1;
+                            if (q.high_frequency) hotKeywordSet.add(kw);
+                        }
+                    });
+                }
+            });
+
+            knowledge.keywords = Object.entries(keywordCounts).sort((a, b) => b[1] - a[1]);
+            knowledge.high_frequency_keywords = Array.from(hotKeywordSet);
+            knowledge.high_freq_questions = highFreqCount;
+        }
+
+        // 3. 初始化主页
+        function initHome() {
+            document.getElementById('main-nav').style.display = 'flex';
+            document.getElementById('stat-total').textContent = questions.length;
+            document.getElementById('stat-high').textContent = knowledge.high_freq_questions;
+            document.getElementById('stat-know').textContent = knowledge.keywords.length;
+
+            const list = document.getElementById('chapter-list');
+            list.innerHTML = '';
+            Object.keys(chapters).forEach(ch => {
+                list.innerHTML += `
+                <div class="list-item" onclick="startPractice('${ch.replace(/'/g, "\\'")}')">
+                    <span>${escapeHtml(ch)}</span>
+                    <span class="badge">${chapters[ch].length} 题</span>
+                </div>`;
+            });
+            switchTab('home');
+        }
+
+        // 简单防XSS
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+                return c;
+            });
+        }
+
+        // 4. 底部Tab切换逻辑 (支持手动刷新练习视图)
+        function switchTab(pageId) {
+            document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
+            const targetPage = document.getElementById('page-' + pageId);
+            if (targetPage) targetPage.classList.add('active');
+            
+            // 更新tab高亮 (data-tab)
+            document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+            if (pageId === 'home') document.querySelector('.tab-item[data-tab="home"]')?.classList.add('active');
+            if (pageId === 'wrong') document.querySelector('.tab-item[data-tab="wrong"]')?.classList.add('active');
+            if (pageId === 'knowledge') document.querySelector('.tab-item[data-tab="knowledge"]')?.classList.add('active');
+            if (pageId === 'practice') {
+                // 如果是练习页，不改变底部高亮（可能来自模考或章节）
+                const activeTab = document.querySelector('.tab-item.active');
+                if (!activeTab) document.querySelector('.tab-item[data-tab="home"]')?.classList.add('active');
+            }
+            
+            // 标题设置
+            const titles = { 'home': '资金业务认证练习', 'wrong': '我的错题本', 'knowledge': '学习地图', 'practice': '答题练习' };
+            document.getElementById('app-title').textContent = titles[pageId] || '答题系统';
+            
+            // 页面专属渲染
+            if (pageId === 'wrong') renderWrongBook();
+            if (pageId === 'knowledge') renderKnowledgeMap();
+            if (pageId === 'practice' && windowChapterQuestions && windowChapterQuestions.length > 0) {
+                // 回到练习页时重新渲染当前进度，保证界面同步
+                renderQuestion();
+            }
+        }
+        
+        // 独立激活模考 (不依赖switchTab标题覆盖)
+        function activateExamMode() {
+            if(questions.length === 0) return alert('请先导入题库');
+            // 全库乱序
+            windowChapterQuestions = questions.map(q => q._globalIndex).sort(() => Math.random() - 0.5);
+            currentIndex = 0;
+            currentSelections = [];
+            document.getElementById('app-title').textContent = '📝 模拟考试 (全库乱序)';
+            // 底部高亮模考项
+            document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+            const examTab = document.querySelector('.tab-item[data-tab="exam"]');
+            if (examTab) examTab.classList.add('active');
+            // 显示练习页面
+            document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-practice').classList.add('active');
+            renderQuestion();
+        }
+
+        // 5. 开始章节练习
+        function startPractice(chapter) {
+            if(questions.length === 0) return alert('请先导入题库');
+            windowChapterQuestions = [...(chapters[chapter] || [])];
+            if (windowChapterQuestions.length === 0) return alert('本章节无题目');
+            currentIndex = 0;
+            currentSelections = [];
+            document.getElementById('app-title').textContent = `📖 章节练习 · ${chapter}`;
+            // 高亮首页tab（因为从首页发起）
+            document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+            document.querySelector('.tab-item[data-tab="home"]')?.classList.add('active');
+            switchTab('practice');
+        }
+
+        // 6. 渲染题目 (核心)
+        function renderQuestion() {
+            if (!windowChapterQuestions.length || currentIndex >= windowChapterQuestions.length) {
+                if (windowChapterQuestions.length === 0) {
+                    document.getElementById('question-text').textContent = '暂无题目，请返回首页选择章节或导入题库';
+                }
+                return;
+            }
+            const q = questions[windowChapterQuestions[currentIndex]];
+            if (!q) return;
+
+            // 进度和Header
+            document.getElementById('current-num').textContent = currentIndex + 1;
+            document.getElementById('total-num').textContent = windowChapterQuestions.length;
+            document.getElementById('current-chapter').textContent = q.chapter || '未分类';
+            const progressPercent = ((currentIndex + 1) / windowChapterQuestions.length * 100);
+            document.getElementById('progress-fill').style.width = progressPercent + '%';
+            
+            // 标签
+            let tagsHtml = '';
+            if (q.type) tagsHtml += `<span class="tag tag-medium">${escapeHtml(q.type)}</span>`;
+            if (q.difficulty) {
+                const map = { '简单': 'easy', '中等': 'medium', '困难': 'hard' };
+                const levelClass = map[q.difficulty] || 'easy';
+                tagsHtml += `<span class="tag tag-${levelClass}">${escapeHtml(q.difficulty)}</span>`;
+            }
+            if (q.high_frequency) tagsHtml += '<span class="tag tag-high">⭐ 高频考点</span>';
+            document.getElementById('question-tags').innerHTML = tagsHtml;
+            
+            // 题干 (安全文本)
+            document.getElementById('question-text').textContent = q.question;
+            const optsContainer = document.getElementById('options-container');
+            optsContainer.innerHTML = '';
+            
+            if (!q.options || Object.keys(q.options).length === 0) {
+                optsContainer.innerHTML = '<div style="color:red; text-align:center;">暂无选项数据</div>';
+            } else {
+                const optionKeys = Object.keys(q.options);
+                optionKeys.forEach(k => {
+                    const optText = q.options[k];
+                    optsContainer.innerHTML += `
+                        <div class="option-item" data-key="${k}">
+                            <div class="opt-letter">${k}</div>
+                            <div class="opt-text">${escapeHtml(optText)}</div>
+                        </div>
+                    `;
+                });
+                // 绑定选项点击事件（委托）
+                optsContainer.querySelectorAll('.option-item').forEach(el => {
+                    el.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (document.getElementById('submit-btn').style.display === 'none') return; // 已提交不可选
+                        const key = el.getAttribute('data-key');
+                        toggleOption(key, el);
+                    });
+                });
+            }
+
+            // 重置UI状态
+            currentSelections = [];
+            document.getElementById('result-box').className = 'result-box';
+            document.getElementById('result-box').innerHTML = '';
+            document.getElementById('explanation').classList.remove('show');
+            document.getElementById('submit-btn').style.display = 'block';
+            document.getElementById('next-btn').style.display = 'none';
+            
+            // 滚动到顶部
+            document.querySelector('.app-body').scrollTop = 0;
+        }
+
+        // 7. 选项交互 (单选/多选)
+        function toggleOption(key, targetEl) {
+            const q = questions[windowChapterQuestions[currentIndex]];
+            if (!q) return;
+            // 判断是否多选：根据type或答案长度特征
+            const isMulti = (q.type === '多选题') || (q.answer && q.answer.length > 1 && !['对','错'].includes(q.answer));
+            
+            if (!isMulti) {
+                // 单选
+                currentSelections = [key];
+                document.querySelectorAll('.option-item').forEach(o => o.classList.remove('selected'));
+                targetEl.classList.add('selected');
+            } else {
+                // 多选
+                const idx = currentSelections.indexOf(key);
+                if (idx > -1) {
+                    currentSelections.splice(idx, 1);
+                    targetEl.classList.remove('selected');
+                } else {
+                    currentSelections.push(key);
+                    targetEl.classList.add('selected');
+                }
+            }
+        }
+
+        // 8. 提交答案 + 错题管理 + 动态移除错题
+        function submitAnswer() {
+            if (currentSelections.length === 0) return alert('请先选择答案！');
+            const q = questions[windowChapterQuestions[currentIndex]];
+            if (!q) return;
+            const isCorrect = isAnswerCorrect(currentSelections, q.answer, q.type);
+            
+            // 高亮所有选项的正确/错误样式
+            const correctAnswerLetters = (q.answer.match(/[A-Z]/g) || []);
+            document.querySelectorAll('.option-item').forEach(el => {
+                const k = el.getAttribute('data-key');
+                if (correctAnswerLetters.includes(k)) el.classList.add('correct');
+                else if (currentSelections.includes(k) && !correctAnswerLetters.includes(k)) el.classList.add('wrong');
+                el.style.pointerEvents = 'none';
+            });
+            
+            const resBox = document.getElementById('result-box');
+            if (isCorrect) {
+                resBox.className = 'result-box correct';
+                resBox.innerHTML = '✅ 回答正确';
+                // 如果此题在错题本中，移除
+                const idxInWrong = wrongAnswers.indexOf(q._globalIndex);
+                if (idxInWrong !== -1) {
+                    wrongAnswers.splice(idxInWrong, 1);
+                    saveWrongBook();
+                    // 若当前在错题本页面，实时刷新
+                    if (document.getElementById('page-wrong').classList.contains('active')) renderWrongBook();
+                }
+            } else {
+                resBox.className = 'result-box wrong';
+                const answerDisplay = q.answer || '无';
+                resBox.innerHTML = `❌ 回答错误，正确答案是：<b>${escapeHtml(answerDisplay)}</b>`;
+                // 加入错题本 (避免重复)
+                if (!wrongAnswers.includes(q._globalIndex)) {
+                    wrongAnswers.push(q._globalIndex);
+                    saveWrongBook();
+                    if (document.getElementById('page-wrong').classList.contains('active')) renderWrongBook();
+                }
+            }
+            
+            // 显示解析
+            document.getElementById('explanation').classList.add('show');
+            const explanationText = q.explanation || '暂无详细解析，请对照答案理解。';
+            document.getElementById('explanation-text').innerHTML = escapeHtml(explanationText).replace(/\n/g, '<br>');
+            
+            // 切换按钮
+            document.getElementById('submit-btn').style.display = 'none';
+            document.getElementById('next-btn').style.display = 'block';
+        }
+
+        // 9. 下一题
+        function nextQuestion() {
+            if (currentIndex < windowChapterQuestions.length - 1) {
+                currentIndex++;
+                renderQuestion();
+            } else {
+                alert('🎉 恭喜！本部分题目已完成！');
+                switchTab('home');
+            }
+        }
+
+        // 10. 错题本渲染
+        function renderWrongBook() {
+            const wrongCountSpan = document.getElementById('wrong-count');
+            wrongCountSpan.textContent = wrongAnswers.length;
+            const container = document.getElementById('wrong-list');
+            container.innerHTML = '';
+            if (wrongAnswers.length === 0) {
+                container.innerHTML = '<div style="text-align:center;color:#999;padding:40px 0;">✨ 太棒了，暂无错题记录！</div>';
+                return;
+            }
+            // 倒序展示
+            [...wrongAnswers].reverse().forEach(idx => {
+                const q = questions[idx];
+                if (q) {
+                    const qText = q.question.length > 60 ? q.question.slice(0, 60) + '...' : q.question;
+                    container.innerHTML += `
+                        <div class="list-item wrong-q-item" onclick="jumpToSpecificQuestion(${idx})">
+                            <div style="flex:1;">${escapeHtml(qText)}</div>
+                            <span style="color:#999;">▶</span>
+                        </div>`;
+                }
+            });
+        }
+        
+        // 跳转至具体题目（错题专用）
+        function jumpToSpecificQuestion(absoluteIndex) {
+            if (!questions[absoluteIndex]) return;
+            windowChapterQuestions = [absoluteIndex];
+            currentIndex = 0;
+            currentSelections = [];
+            document.getElementById('app-title').textContent = '🔁 错题回顾';
+            // 保持底部tab高亮不变但切换到练习页
+            document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-practice').classList.add('active');
+            renderQuestion();
+        }
+        
+        // 11. 学习地图渲染
+        function renderKnowledgeMap() {
+            const hotContainer = document.getElementById('hot-knowledge-list');
+            const allContainer = document.getElementById('knowledge-list');
+            hotContainer.innerHTML = '';
+            allContainer.innerHTML = '';
+            knowledge.high_frequency_keywords.forEach(kw => {
+                hotContainer.innerHTML += `<div class="keyword-chip hot" onclick="filterByKeyword('${escapeHtml(kw).replace(/'/g, "\\'")}')">🔥 ${escapeHtml(kw)}</div>`;
+            });
+            knowledge.keywords.forEach(([kw, count]) => {
+                allContainer.innerHTML += `<div class="keyword-chip" onclick="filterByKeyword('${escapeHtml(kw).replace(/'/g, "\\'")}')">${escapeHtml(kw)} (${count})</div>`;
+            });
+        }
+        
+        // 知识点刷题
+        function filterByKeyword(kw) {
+            if (!questions.length) return;
+            const indices = [];
+            questions.forEach((q, i) => {
+                if (q.keywords && q.keywords.includes(kw)) indices.push(i);
+            });
+            if (indices.length === 0) return alert('没有包含该知识点的题目');
+            windowChapterQuestions = indices;
+            currentIndex = 0;
+            currentSelections = [];
+            document.getElementById('app-title').textContent = `📌 专项练习 · ${kw}`;
+            document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-practice').classList.add('active');
+            renderQuestion();
+        }
+        
+        // 初始化事件绑定
+        function bindEvents() {
+            document.getElementById('uploadBtn').addEventListener('click', () => {
+                document.getElementById('json-upload').click();
+            });
+            document.getElementById('json-upload').addEventListener('change', (e) => {
+                if (e.target.files.length) loadJSON(e.target.files[0]);
+                e.target.value = '';
+            });
+            document.getElementById('submit-btn').addEventListener('click', submitAnswer);
+            document.getElementById('next-btn').addEventListener('click', nextQuestion);
+            // 底部导航统一
+            document.querySelectorAll('.tab-item').forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    const type = tab.getAttribute('data-tab');
+                    if (type === 'exam') activateExamMode();
+                    else if (type === 'home') switchTab('home');
+                    else if (type === 'wrong') switchTab('wrong');
+                    else if (type === 'knowledge') switchTab('knowledge');
+                });
+            });
+        }
+        
+        // 初始化加载错题本
+        loadWrongBook();
+        bindEvents();
+        autoLoadBundledJSON();
+    </script>
+</body>
+</html>
